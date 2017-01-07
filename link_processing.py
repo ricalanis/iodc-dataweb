@@ -3,6 +3,7 @@ import bs4
 import dryscrape
 import urllib
 import json
+import re
 
 def p_decorate(func):
    def func_wrapper(self):
@@ -12,6 +13,14 @@ def p_decorate(func):
 
 talk_session = dryscrape.Session(base_url ="http://sched.co/")
 blog_session =dryscrape.Session(base_url="http://opendatacon.org/")
+photo_session = dryscrape.Session(base_url ="https://www.flickr.com/")
+
+p = re.compile('(?<=https:////)[^}]*((?<=https:////)[^}]*_m.jpg)')
+
+def notes(data):
+    if "http" not in str(data):
+        data = ""
+    return str(data)
 
 def extract_links(speakers_section):
     links_speakers_section = speakers_section.findAll("a")
@@ -29,39 +38,77 @@ def extract_name_links(links):
     return links_speakers
 
 def talk(link):
+    if "sched." not in str(link):
+        return {"description":link,"speakers":[]}
     sess = talk_session
     talk_id =str(link).split("/")[-1]
     sess.visit(talk_id)
     content = sess.body()
     soup = bs4.BeautifulSoup(content)
-    description_section = soup.find("div",{"class":"tip-description"})
-    description = description_section.text
-    speakers_section = soup.find("div",{"class":"tip-roles"})
-    links = extract_links(speakers_section)
-    speakers = extract_name_links(links)
+    try:
+        description_section = soup.find("div",{"class":"tip-description"})
+        description = description_section.text.split()
+        if len(description)>50:
+            description = " ".join(description[0:49]) + "..." + "<a href='" + str(talk_id) + "'>Read more</a>"
+    except:
+        description = ""
+    try:
+        speakers_section = soup.find("div",{"class":"tip-roles"})
+        links = extract_links(speakers_section)
+        speakers = extract_name_links(links)
+    except:
+        speakers = []
     return {"description":description,"speakers":speakers}
 
 def youtube(link):
-    url_data = urllib.parse.urlparse(link)
-    query = urllib.parse.parse_qs(url_data.query)
-    video = query["v"][0]
+    try:
+        url_data = urllib.parse.urlparse(link)
+        query = urllib.parse.parse_qs(url_data.query)
+        video = query["v"][0]
+    except:
+        video = ""
     return video
 
 def twitter(links):
     output = []
     for link in str(links).split("\n"):
-        content =requests.get(link).content
-        soup = bs4.BeautifulSoup(content)
-        output.append({"link": link, "content": soup.find("p", {"class":"tweet-text"}).text})
+        try:
+            content =requests.get(link).content
+            soup = bs4.BeautifulSoup(content)
+            tweet_text = str(soup.find("p", {"class":"tweet-text"}))
+            text_clean = tweet_text.replace('href="/','href="http://www.twitter.com/')
+            output.append({"link": link, "content": text_clean })
+        except:
+            output.append({"link": "", "content": ""})
     return output
 
-def blogpost(link):
-    blog_id =str(link).split("/")[-1]
-    sess = blog_session
-    sess.visit(blog_id)
-    content =sess.body()
-    soup = bs4.BeautifulSoup(content)
-    return soup.findAll("div","dash")[-1].text
+def blogpost(links):
+    output = []
+    for bpost in str(links).split("\n"):
+        try:
+            blog_id =str(link).split("/")[-1]
+            sess = blog_session
+            sess.visit(blog_id)
+            content =sess.body()
+            soup = bs4.BeautifulSoup(content)
+            bpost_title = soup.findAll("div","dash")[-1].text
+            output.append({"link": link, "content": bpost_title })
+        except:
+            output.append({"link": "", "content": "" })
+    return output
 
 def photos(links):
-    return str(links).split(" ")
+    sess = photo_session
+    link_list = str(links).split(" ")
+    output = []
+    for link in link_list:
+        try:
+            photo_id = link.split("www.flickr.com/")[-1]
+            sess.visit(photo_id)
+            content = sess.body()
+            soup = bs4.BeautifulSoup(content)
+            p.findall(content)
+            output.append({"file":p.findall(content)[0], "url": link})
+        except:
+            None
+    return output
